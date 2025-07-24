@@ -9,8 +9,8 @@ from collections import Counter
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 
 # Set input/output directories
-input_dir = "D:/Adobe Hackathon/app/input"
-output_dir = "D:/Adobe Hackathon/app/output"
+input_dir = "/app/input"
+output_dir = "/app/output"
 
 def extract_text_info(doc):
     all_text_info = []
@@ -157,5 +157,5 @@ def process_pdfs():
             except Exception as e:
                 logging.error(f"Error processing {file_name}: {str(e)}")
 
-if _name_ == "_main_":
+if __name__ == "__main__":
     process_pdfs()
