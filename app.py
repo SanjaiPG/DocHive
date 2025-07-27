@@ -2,113 +2,126 @@ import fitz  # PyMuPDF
 import os
 import json
 import re
-import logging
 from collections import Counter
 
-# Set up logging
-logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
+def extract_outline_from_pdf(file_path):
+    """
+    Extracts a structured outline from a PDF by detecting headings based on font size, boldness,
+    and formatting cues.
+    Returns a dict with document title and outline items.
+    """
+    doc = fitz.open(file_path)
 
-# Set input/output directories
-input_dir = "/app/input"
-output_dir = "/app/output"
-
-def extract_text_info(doc):
     all_text_info = []
     font_sizes = []
 
-    for page_num in range(len(doc)):
-        page = doc[page_num]
+    for page_num, page in enumerate(doc, start=1):
         blocks = page.get_text("dict")["blocks"]
-
         for block in blocks:
             if "lines" not in block:
                 continue
             for line in block["lines"]:
                 line_text = ""
-                font_size = 0
-                is_bold = False
+                max_font_size = 0
+                bold_char_count = 0
+                total_char_count = 0
                 bbox = line.get("bbox", [0, 0, 0, 0])
 
                 for span in line["spans"]:
                     text = span["text"]
-                    if text.strip() == "":
-                        continue
-                    size = round(span["size"], 1)
-                    font_sizes.append(size)
-                    font_size = max(font_size, size)
-                    if span.get("flags", 0) & 16:
-                        is_bold = True
                     line_text += text
+                    size = round(span["size"], 1)
+                    if size > max_font_size:
+                        max_font_size = size
+                    total_char_count += len(text)
+                    if span.get("flags", 0) & 16:
+                        bold_char_count += len(text)
+                    font_sizes.append(size)
 
                 line_text = line_text.strip()
                 if line_text and len(line_text) > 1:
+                    is_bold = (bold_char_count / total_char_count) > 0.5 if total_char_count else False
                     all_text_info.append({
                         "text": line_text,
-                        "font_size": round(font_size, 1),
+                        "font_size": max_font_size,
                         "is_bold": is_bold,
-                        "page": page_num + 1,
+                        "page": page_num,
                         "bbox": bbox
                     })
 
-    return all_text_info, font_sizes
+    doc.close()
 
-def is_likely_heading(text_info, body_size):
-    text = text_info["text"]
-    font_size = text_info["font_size"]
-    is_bold = text_info["is_bold"]
+    if not font_sizes:
+        # No text found fallback
+        return {"title": "Unknown Document", "outline": []}
 
-    if len(text) > 100:
-        return False
+    # Most common font size assumed to be body text
+    most_common_size = Counter(font_sizes).most_common(1)[0][0]
 
-    words = text.split()
-    if len(words) > 3:
-        lowercase_ratio = sum(1 for word in words if word.islower() and len(word) > 2) / len(words)
-        if lowercase_ratio > 0.6:
+    def is_likely_heading(text_info):
+        text = text_info["text"]
+        font_size = text_info["font_size"]
+        is_bold = text_info["is_bold"]
+        left_x = text_info["bbox"][0]
+
+        if len(text) > 100:
             return False
 
-    size_factor = font_size > body_size * 1.1
-    bold_factor = is_bold
-    format_factor = (
-        text.isupper() or
-        text.istitle() or
-        bool(re.match(r'^[A-Z]', text)) or
-        bool(re.match(r'^\d+[\.\)]', text)) or
-        text.endswith(':')
-    )
+        words = text.split()
+        if len(words) > 3:
+            lowercase_ratio = sum(1 for w in words if w.islower() and len(w) > 2) / len(words)
+            if lowercase_ratio > 0.6:
+                return False
 
-    if any(term in text.lower() for term in ['page', 'figure', 'table', '•', 'http', 'www']):
-        return False
+        size_factor = font_size > most_common_size * 1.1
+        bold_factor = is_bold
+        format_factor = (
+            text.isupper() or
+            text.istitle() or
+            bool(re.match(r'^[A-Z]', text)) or
+            bool(re.match(r'^\d+[\.\)]', text)) or
+            text.endswith(':')
+        )
+        left_margin_factor = left_x < 100
 
-    return sum([size_factor, bold_factor, format_factor]) >= 2
+        # Avoid marking bold text with body font size as heading
+        if is_bold and font_size == most_common_size:
+            return False
 
-def extract_outline_from_pdf(file_path, max_levels=4):
-    doc = fitz.open(file_path)
+        # Exclude common unwanted patterns
+        lower_text = text.lower()
+        if any(term in lower_text for term in ['page', 'figure', 'table', '•', 'http', 'www']):
+            return False
 
-    all_text_info, font_sizes = extract_text_info(doc)
-    body_size = Counter(font_sizes).most_common(1)[0][0] if font_sizes else 12.0
+        score = sum([size_factor, bold_factor, format_factor, left_margin_factor])
+        return score >= 3
 
-    potential_headings = [info for info in all_text_info if is_likely_heading(info, body_size)]
-    heading_sizes = sorted(set([h["font_size"] for h in potential_headings]), reverse=True)
+    potential_headings = [info for info in all_text_info if is_likely_heading(info)]
 
-    size_to_level = {}
-    for i, size in enumerate(heading_sizes[:max_levels]):
-        size_to_level[size] = f"H{i+1}"
+    # Unique font sizes sorted descending, pick top 3 for heading levels
+    heading_sizes = sorted({h["font_size"] for h in potential_headings}, reverse=True)[:3]
+    size_to_level = {size: f"H{idx+1}" for idx, size in enumerate(heading_sizes)}
 
     outline = []
     for heading in potential_headings:
         level = size_to_level.get(heading["font_size"])
-        if level:
-            clean_text = re.sub(r'^[•\-\]\s]*', '', heading["text"])
-            clean_text = re.sub(r'^\d+[\.\)]\s*', '', clean_text)
-            clean_text = re.sub(r'\s+', ' ', clean_text).strip()
-            if clean_text:
-                outline.append({
-                    "level": level,
-                    "text": clean_text,
-                    "page": heading["page"]
-                })
+        if not level:
+            continue
 
-    # Remove duplicates
+        text = heading["text"]
+        # Clean heading text from bullets, numbering, etc.
+        text = re.sub(r'^[•\-\]\s]*', '', text)
+        text = re.sub(r'^\d+[\.\)]\s*', '', text)
+        text = text.strip()
+
+        if text:
+            outline.append({
+                "level": level,
+                "text": text,
+                "page": heading["page"]
+            })
+
+    # Remove duplicates preserving order
     seen = set()
     unique_outline = []
     for item in outline:
@@ -117,45 +130,35 @@ def extract_outline_from_pdf(file_path, max_levels=4):
             seen.add(key)
             unique_outline.append(item)
 
-    # Title detection
+    # Determine title
     title = "Unknown Document"
-    title_candidates = [info for info in all_text_info if info["font_size"] >= body_size * 1.5]
-    if title_candidates:
-        title = title_candidates[0]["text"].strip()
+    h1s = [item for item in unique_outline if item["level"] == "H1"]
+    if h1s:
+        title = h1s[0]["text"]
     elif unique_outline:
         title = unique_outline[0]["text"]
 
-    # Remove first H1 if it matches the title
-    if unique_outline:
-        first = unique_outline[0]
-        if first["level"] == "H1" and first["text"].strip().lower() == title.strip().lower():
-            unique_outline = unique_outline[1:]
+    # Remove the title heading from the outline if present
+    unique_outline = [item for item in unique_outline if item["text"] != title]
 
-    doc.close()
-    return {
-        "title": title,
-        "outline": unique_outline,
-        "title_entry": {
-            "text": title,
-            "page": title_candidates[0]["page"] if title_candidates else None
-        }
-    }
+    return {"title": title, "outline": unique_outline}
 
-def process_pdfs():
-    os.makedirs(output_dir, exist_ok=True)
-
-    for file_name in os.listdir(input_dir):
-        if file_name.lower().endswith(".pdf"):
-            file_path = os.path.join(input_dir, file_name)
-            output_json = os.path.join(output_dir, file_name.replace(".pdf", ".json"))
-
-            try:
-                result = extract_outline_from_pdf(file_path)
-                with open(output_json, "w", encoding="utf-8") as f:
-                    json.dump(result, f, indent=2, ensure_ascii=False)
-                logging.info(f"Processed: {file_name}")
-            except Exception as e:
-                logging.error(f"Error processing {file_name}: {str(e)}")
 
 if __name__ == "__main__":
-    process_pdfs()
+    input_dir = "/content/input"
+    output_dir = "/content/output"
+    os.makedirs(output_dir, exist_ok=True)
+
+    for filename in os.listdir(input_dir):
+        if not filename.lower().endswith(".pdf"):
+            continue
+        input_path = os.path.join(input_dir, filename)
+        output_path = os.path.join(output_dir, filename.rsplit(".", 1)[0] + ".json")
+
+        try:
+            result = extract_outline_from_pdf(input_path)
+            with open(output_path, "w", encoding="utf-8") as f:
+                json.dump(result, f, indent=2, ensure_ascii=False)
+            print(f"Processed: {filename}")
+        except Exception as e:
+            print(f"Error processing {filename}: {e}")
