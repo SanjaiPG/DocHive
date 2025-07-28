@@ -173,9 +173,9 @@ def extract_outline_from_pdf(file_path):
     return {"title": title, "outline": unique_outline}
 
 
-if __name__ == "__main__":
-    input_dir = "/content/input"
-    output_dir = "/content/output"
+def main():
+    input_dir = "/app/input"
+    output_dir = "/app/output"
     os.makedirs(output_dir, exist_ok=True)
 
     for filename in os.listdir(input_dir):
@@ -185,4 +185,7 @@ if __name__ == "__main__":
         output_path = os.path.join(output_dir, filename.rsplit(".", 1)[0] + ".json")
         result = extract_outline_from_pdf(input_path)
         with open(output_path, "w", encoding="utf-8") as f:
-          json.dump(result, f, indent=2, ensure_ascii=False)
+            json.dump(result, f, indent=2, ensure_ascii=False)
+
+if __name__ == "__main__":
+    main()
