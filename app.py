@@ -5,17 +5,12 @@ import re
 from collections import Counter
 
 def extract_outline_from_pdf(file_path):
-    """
-    Extracts a structured outline from a PDF by detecting headings based on font size, boldness,
-    and formatting cues.
-    Returns a dict with document title and outline items.
-    """
     doc = fitz.open(file_path)
 
     all_text_info = []
     font_sizes = []
 
-    for page_num, page in enumerate(doc, start=1):
+    for page_num, page in enumerate(doc, start=0):
         blocks = page.get_text("dict")["blocks"]
         for block in blocks:
             if "lines" not in block:
@@ -52,10 +47,8 @@ def extract_outline_from_pdf(file_path):
     doc.close()
 
     if not font_sizes:
-        # No text found fallback
-        return {"title": "Unknown Document", "outline": []}
+        return {"title": "", "outline": []}
 
-    # Most common font size assumed to be body text
     most_common_size = Counter(font_sizes).most_common(1)[0][0]
 
     def is_likely_heading(text_info):
@@ -84,11 +77,9 @@ def extract_outline_from_pdf(file_path):
         )
         left_margin_factor = left_x < 100
 
-        # Avoid marking bold text with body font size as heading
         if is_bold and font_size == most_common_size:
             return False
 
-        # Exclude common unwanted patterns
         lower_text = text.lower()
         if any(term in lower_text for term in ['page', 'figure', 'table', '•', 'http', 'www']):
             return False
@@ -97,10 +88,18 @@ def extract_outline_from_pdf(file_path):
         return score >= 3
 
     potential_headings = [info for info in all_text_info if is_likely_heading(info)]
+    heading_sizes = sorted({h["font_size"] for h in potential_headings}, reverse=True)
 
-    # Unique font sizes sorted descending, pick top 3 for heading levels
-    heading_sizes = sorted({h["font_size"] for h in potential_headings}, reverse=True)[:3]
-    size_to_level = {size: f"H{idx+1}" for idx, size in enumerate(heading_sizes)}
+    size_to_level = {}
+    if len(heading_sizes) >= 3:
+        size_to_level = {
+            heading_sizes[0]: "H1",
+            heading_sizes[1]: "H2",
+            heading_sizes[2]: "H3"
+        }
+    else:
+        for idx, size in enumerate(heading_sizes):
+            size_to_level[size] = f"H{idx+1}"
 
     outline = []
     for heading in potential_headings:
@@ -109,37 +108,85 @@ def extract_outline_from_pdf(file_path):
             continue
 
         text = heading["text"]
-        # Clean heading text from bullets, numbering, etc.
         text = re.sub(r'^[•\-\]\s]*', '', text)
         text = re.sub(r'^\d+[\.\)]\s*', '', text)
         text = text.strip()
 
-        if text:
-            outline.append({
-                "level": level,
-                "text": text,
-                "page": heading["page"]
-            })
+        if not text:
+            continue
 
-    # Remove duplicates preserving order
+        # Merge split headings that are close vertically with same level and page
+        if outline:
+            last = outline[-1]
+            if (last["page"] == heading["page"] and
+                last["level"] == level and
+                abs(heading["bbox"][1] - last.get("bbox", [0, 0, 0, 0])[1]) < 30):
+                last["text"] += " " + text
+                continue
+
+        outline.append({
+            "level": level,
+            "text": text,
+            "page": heading["page"],
+            "bbox": heading["bbox"]
+        })
+
+    # === Multi-line Title Detection ===
+    # Filter largest font size headings on first 3 pages
+    largest_size = max(heading_sizes) if heading_sizes else None
+    largest_headings = [
+        h for h in potential_headings
+        if h["font_size"] == largest_size and h["page"] <= 2
+    ]
+
+    # Helper to get page height:
+    with fitz.open(file_path) as doc_check:
+        page_heights = [doc_check[p].rect.height for p in range(len(doc_check))]
+
+    # Filter headings in top half of their page:
+    largest_headings_top_half = [
+        h for h in largest_headings if h["bbox"][1] < page_heights[h["page"]] / 2
+    ]
+
+    title = ""
+    if largest_headings_top_half:
+        # Group lines by page, bold, font size, and vertical proximity
+        groups = []
+        largest_headings_top_half = sorted(largest_headings_top_half, key=lambda h: (h["page"], h["bbox"][1]))
+        current_group = [largest_headings_top_half[0]]
+
+        for curr in largest_headings_top_half[1:]:
+            last = current_group[-1]
+            same_page = curr["page"] == last["page"]
+            same_bold = curr["is_bold"] == last["is_bold"]
+            same_size = abs(curr["font_size"] - last["font_size"]) < 0.1
+            close_vertically = abs(curr["bbox"][1] - last["bbox"][3]) < 30  # curr top - last bottom <30 px
+
+            if same_page and same_bold and same_size and close_vertically:
+                current_group.append(curr)
+            else:
+                groups.append(current_group)
+                current_group = [curr]
+        groups.append(current_group)
+
+        # Choose largest group (most lines) as title candidate
+        best_group = max(groups, key=len)
+
+        # Join lines by space to form multi-line title
+        title = " ".join(line["text"] for line in best_group).strip()
+
+    # Remove title lines from outline
     seen = set()
     unique_outline = []
     for item in outline:
+        if title and item["text"] in title:
+            # If item text is part of the title string, skip
+            continue
         key = (item["level"], item["text"], item["page"])
         if key not in seen:
             seen.add(key)
+            item.pop("bbox", None)
             unique_outline.append(item)
-
-    # Determine title
-    title = "Unknown Document"
-    h1s = [item for item in unique_outline if item["level"] == "H1"]
-    if h1s:
-        title = h1s[0]["text"]
-    elif unique_outline:
-        title = unique_outline[0]["text"]
-
-    # Remove the title heading from the outline if present
-    unique_outline = [item for item in unique_outline if item["text"] != title]
 
     return {"title": title, "outline": unique_outline}
 
