@@ -1,4 +1,4 @@
-import fitz  # PyMuPDF
+import fitz
 import os
 import json
 import re
@@ -6,7 +6,6 @@ from collections import Counter
 
 def extract_outline_from_pdf(file_path):
     doc = fitz.open(file_path)
-
     all_text_info = []
     font_sizes = []
 
@@ -66,7 +65,7 @@ def extract_outline_from_pdf(file_path):
             if lowercase_ratio > 0.6:
                 return False
 
-        size_factor = font_size > most_common_size * 1.1
+        size_factor = font_size > most_common_size * 1.05
         bold_factor = is_bold
         format_factor = (
             text.isupper() or
@@ -91,15 +90,9 @@ def extract_outline_from_pdf(file_path):
     heading_sizes = sorted({h["font_size"] for h in potential_headings}, reverse=True)
 
     size_to_level = {}
-    if len(heading_sizes) >= 3:
-        size_to_level = {
-            heading_sizes[0]: "H1",
-            heading_sizes[1]: "H2",
-            heading_sizes[2]: "H3"
-        }
-    else:
-        for idx, size in enumerate(heading_sizes):
-            size_to_level[size] = f"H{idx+1}"
+    if heading_sizes:
+        for idx, size in enumerate(heading_sizes[:3]):
+            size_to_level[size] = f"H{idx}"
 
     outline = []
     for heading in potential_headings:
@@ -115,7 +108,6 @@ def extract_outline_from_pdf(file_path):
         if not text:
             continue
 
-        # Merge split headings that are close vertically with same level and page
         if outline:
             last = outline[-1]
             if (last["page"] == heading["page"] and
@@ -131,26 +123,21 @@ def extract_outline_from_pdf(file_path):
             "bbox": heading["bbox"]
         })
 
-    # === Multi-line Title Detection ===
-    # Filter largest font size headings on first 3 pages
-    largest_size = max(heading_sizes) if heading_sizes else None
+    largest_size = heading_sizes[0] if heading_sizes else None
     largest_headings = [
         h for h in potential_headings
         if h["font_size"] == largest_size and h["page"] <= 2
     ]
 
-    # Helper to get page height:
     with fitz.open(file_path) as doc_check:
         page_heights = [doc_check[p].rect.height for p in range(len(doc_check))]
 
-    # Filter headings in top half of their page:
     largest_headings_top_half = [
         h for h in largest_headings if h["bbox"][1] < page_heights[h["page"]] / 2
     ]
 
     title = ""
     if largest_headings_top_half:
-        # Group lines by page, bold, font size, and vertical proximity
         groups = []
         largest_headings_top_half = sorted(largest_headings_top_half, key=lambda h: (h["page"], h["bbox"][1]))
         current_group = [largest_headings_top_half[0]]
@@ -160,7 +147,7 @@ def extract_outline_from_pdf(file_path):
             same_page = curr["page"] == last["page"]
             same_bold = curr["is_bold"] == last["is_bold"]
             same_size = abs(curr["font_size"] - last["font_size"]) < 0.1
-            close_vertically = abs(curr["bbox"][1] - last["bbox"][3]) < 30  # curr top - last bottom <30 px
+            close_vertically = abs(curr["bbox"][1] - last["bbox"][3]) < 30
 
             if same_page and same_bold and same_size and close_vertically:
                 current_group.append(curr)
@@ -169,18 +156,13 @@ def extract_outline_from_pdf(file_path):
                 current_group = [curr]
         groups.append(current_group)
 
-        # Choose largest group (most lines) as title candidate
         best_group = max(groups, key=len)
-
-        # Join lines by space to form multi-line title
         title = " ".join(line["text"] for line in best_group).strip()
 
-    # Remove title lines from outline
     seen = set()
     unique_outline = []
     for item in outline:
         if title and item["text"] in title:
-            # If item text is part of the title string, skip
             continue
         key = (item["level"], item["text"], item["page"])
         if key not in seen:
@@ -201,11 +183,6 @@ if __name__ == "__main__":
             continue
         input_path = os.path.join(input_dir, filename)
         output_path = os.path.join(output_dir, filename.rsplit(".", 1)[0] + ".json")
-
-        try:
-            result = extract_outline_from_pdf(input_path)
-            with open(output_path, "w", encoding="utf-8") as f:
-                json.dump(result, f, indent=2, ensure_ascii=False)
-            print(f"Processed: {filename}")
-        except Exception as e:
-            print(f"Error processing {filename}: {e}")
+        result = extract_outline_from_pdf(input_path)
+        with open(output_path, "w", encoding="utf-8") as f:
+          json.dump(result, f, indent=2, ensure_ascii=False)
