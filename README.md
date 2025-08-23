@@ -15,3 +15,16 @@ This project provides a **heuristic-based PDF outline extractor** that analyzes 
 - Uses **font size, boldness, indentation, and formatting clues** to detect headings.  
 - Supports **batch processing** (process all PDFs in a folder).  
 - Saves results as **structured JSON files**. 
+
+## How It Works  
+The extractor follows a **heuristic approach**:  
+1. Reads all text spans from the PDF using [PyMuPDF (`fitz`)](https://pymupdf.readthedocs.io/).  
+2. Collects **font sizes, bold flags, and bounding boxes**.  
+3. Applies rules to detect **likely headings** based on:  
+   - Larger-than-normal font size  
+   - Bold text usage  
+   - Title case / uppercase / numbering (e.g., `1. Introduction`)  
+   - Left margin alignment  
+4. Builds a **document title** from the largest, topmost headings.  
+5. Constructs an **outline hierarchy (H0/H1/H2)**.  
+6. Saves output as JSON (with `title` + `outline`).  
