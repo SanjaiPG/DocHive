@@ -47,3 +47,22 @@ dochive/
 ├── process_pdfs.py      # Main extraction script
 └── README.md
 ```
+
+## Installation
+### Prerequisites
+- Python 3.7 or higher
+- pip package manager
+
+### Install Dependencies
+```bash
+pip install PyMuPDF
+```
+
+## Processing
+### To process PDFs
+1. Place your PDF files in the input/ directory
+2. Run the script:
+```bash
+python process_pdfs.py 
+```
+3. Check the output/ directory for JSON results
