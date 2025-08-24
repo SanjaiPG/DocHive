@@ -27,4 +27,14 @@ The extractor follows a **heuristic approach**:
    - Left margin alignment  
 4. Builds a **document title** from the largest, topmost headings.  
 5. Constructs an **outline hierarchy (H0/H1/H2)**.  
-6. Saves output as JSON (with `title` + `outline`).  
+6. Saves output as JSON (with `title` + `outline`).
+   ```json
+   {
+      "title": "Document Title",
+      "outline": [
+       { "level": "H0", "text": "Introduction", "page": 1 },
+       { "level": "H1", "text": "Background", "page": 2 },
+       { "level": "H2", "text": "Previous Work", "page": 3 }
+      ]
+   }
+   ```
