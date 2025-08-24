@@ -44,6 +44,6 @@ dochive/
 ├── app/
 │   ├── input/           # Place your PDF files here
 │   └── output/          # Extracted JSON outlines will be saved here
-├── process_pdfs.py  # Main extraction script
+├── process_pdfs.py      # Main extraction script
 └── README.md
 ```
