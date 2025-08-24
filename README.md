@@ -38,3 +38,12 @@ The extractor follows a **heuristic approach**:
       ]
    }
    ```
+## Project Structure
+```
+dochive/
+├── app/
+│   ├── input/           # Place your PDF files here
+│   └── output/          # Extracted JSON outlines will be saved here
+├── process_pdfs.py  # Main extraction script
+└── README.md
+```
