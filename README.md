@@ -67,6 +67,35 @@ python process_pdfs.py
 ```
 3. Check the output/ directory for JSON results
 
+## How to Run with Docker
+You can use Docker to containerize and run the PDF outline extractor easily.
+
+1. Build the Docker Image
+Run this command in the project root (where your Dockerfile and process_pdfs.py are):
+```
+docker build -t pdf-outline-extractor .
+```
+This builds a Docker image named pdf-outline-extractor using Python 3.10-slim with PyMuPDF installed.
+
+2. Run the Container
+Run the container, mounting your local input and output directories into the container:
+```
+docker run --rm \
+  -v /full/path/to/input:/app/input \
+  -v /full/path/to/output:/app/output \
+  pdf-outline-extractor
+```
+- Replace /full/path/to/input and /full/path/to/output with your actual directories on your machine.
+- Place your PDF files inside the input directory before running.
+- The extracted JSON outline files will be saved inside the output directory.
+
+For CMD:
+```
+docker run --rm -v C:\full\path\to\input:/app/input -v C:\full\path\to\output:/app/output pdf-outline-extractor
+```
+3. Verify Output -
+   After running, check the output folder for JSON files corresponding to your processed PDFs.
+
 ## Info
 
 This project, **DocHive**, was developed as part of the **Adobe Hackathon 1A – Connecting Dots** round.
