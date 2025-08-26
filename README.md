@@ -66,3 +66,21 @@ pip install PyMuPDF
 python process_pdfs.py 
 ```
 3. Check the output/ directory for JSON results
+
+## Info
+
+This project, **DocHive**, was developed as part of the **Adobe Hackathon 1A – Connecting Dots** round.
+
+**Successfully qualified for the final round** with this solution.
+
+### Adobe Hackathon Constraints
+
+This project complies with the official constraints defined for Adobe Hackathon Round 1A:
+
+| Constraint Type  | Requirement                          |
+|------------------|--------------------------------------|
+| Execution Time | ≤ 10 seconds for a 50-page PDF       |
+| Model Size     | ≤ 200 MB (if any used)               |
+| Network        | No internet access allowed           |
+| Runtime        | Must run on **CPU only (amd64)**      |
+| System Config  | Tested on 8 CPUs, 16 GB RAM setup     |
